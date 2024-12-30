@@ -35,13 +35,16 @@ _G.target = ""
 _G.country = Countries[LocalizationService:GetCountryRegionForPlayerAsync(LocalPlayer)]
 _G.HeadSize = 20
 _G.Disabled = false
+_G.fling = false
 
 local FLYING = false
 local QEfly = true
 local iyflyspeed = 1
 local vehicleflyspeed = 1
+local flinging = false
 
 local Noclipping = nil
+local flingDied = nil
 local Clip = true
 
 local IYMouse = LocalPlayer:GetMouse()
@@ -49,6 +52,15 @@ local IYMouse = LocalPlayer:GetMouse()
 local checked_plrs = {}
 
 -- Functions
+
+function randomString()
+	local length = math.random(10,20)
+	local array = {}
+	for i = 1, length do
+		array[i] = string.char(math.random(32, 126))
+	end
+	return table.concat(array)
+end
 
 local function TP(player)
     player = player:lower()
@@ -95,25 +107,32 @@ function getRoot(char)
 end
 
 function NoClip(speaker)
-    Clip = false
-	wait(0.1)
-	local function NoclipLoop()
-		if Clip == false and speaker.Character ~= nil then
-			for _, child in pairs(speaker.Character:GetDescendants()) do
-				if child:IsA("BasePart") and child.CanCollide == true then
-					child.CanCollide = false
-				end
-			end
-		end
-	end
-	Noclipping = RS.Stepped:Connect(NoclipLoop)
+    if Clip then
+        Clip = false
+	    wait(0.1)
+	    local function NoclipLoop()
+		    if Clip == false and speaker.Character ~= nil then
+			    for _, child in pairs(speaker.Character:GetDescendants()) do
+				    if child:IsA("BasePart") and child.CanCollide == true then
+					    child.CanCollide = false
+				    end
+			    end
+		    end
+	    end
+	    Noclipping = RS.Stepped:Connect(NoclipLoop)
+    end
 end
 
 function Cl()
-    if Noclipping then
-		Noclipping:Disconnect()
-	end
-	Clip = true
+    if not Clip then
+        if Noclipping == nil then
+            return
+        else
+            Noclipping:Disconnect()
+        end
+    
+        Clip = true
+    end
 end
 
 function sFLY(vfly)
@@ -209,6 +228,67 @@ function NOFLY()
 	end
 	pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end)
 end
+
+function unfling(speaker)
+    Cl()
+	if flingDied then
+		flingDied:Disconnect()
+	end
+	flinging = false
+	wait(.1)
+	local speakerChar = speaker.Character
+	if not speakerChar or not getRoot(speakerChar) then return end
+	for i,v in pairs(getRoot(speakerChar):GetChildren()) do
+		if v.ClassName == 'BodyAngularVelocity' then
+			v:Destroy()
+		end
+	end
+	for _, child in pairs(speakerChar:GetDescendants()) do
+		if child.ClassName == "Part" or child.ClassName == "MeshPart" then
+			child.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+		end
+	end
+end
+
+function Fling(speaker)
+    flinging = false
+	for _, child in pairs(speaker.Character:GetDescendants()) do
+		if child:IsA("BasePart") then
+			child.CustomPhysicalProperties = PhysicalProperties.new(math.huge, 0.3, 0.5)
+		end
+	end
+	NoClip(LocalPlayer)
+	wait(.1)
+	local bambam = Instance.new("BodyAngularVelocity")
+	bambam.Name = randomString()
+	bambam.Parent = getRoot(speaker.Character)
+	bambam.AngularVelocity = Vector3.new(0,99999,0)
+	bambam.MaxTorque = Vector3.new(0,math.huge,0)
+	bambam.P = math.huge
+	local Char = speaker.Character:GetChildren()
+	for i, v in next, Char do
+		if v:IsA("BasePart") then
+			v.CanCollide = false
+			v.Massless = true
+			v.Velocity = Vector3.new(0, 0, 0)
+		end
+	end
+	flinging = true
+	local function flingDiedF()
+		unfling(LocalPlayer)
+	end
+
+	flingDied = speaker.Character:FindFirstChildOfClass('Humanoid').Died:Connect(flingDiedF)
+
+	repeat
+		bambam.AngularVelocity = Vector3.new(0,99999,0)
+		wait(.2)
+		bambam.AngularVelocity = Vector3.new(0,0,0)
+		wait(.1)
+	until flinging == false
+end
+
+-- RS
 
 game:GetService('RunService').RenderStepped:Connect(function()
     if _G.Disabled then
@@ -343,6 +423,27 @@ Gen:AddToggle({
     end
 })
 
+local fly_speed = Gen:AddSlider({
+    Name = "Fly speed",
+    Min = 1,
+    Max = 500,
+    Default = 10,
+    Color = Color3.fromRGB(0, 200, 0),
+    Increment = 1,
+    ValueName = "speed",
+    Callback = function(val)
+        iyflyspeed = val
+        vehicleflyspeed = val
+    end
+})
+
+Gen:AddButton({
+    Name = "Reset",
+    Callback = function()
+        fly_speed:Set(10)
+    end
+})
+
 Gen:AddToggle({
     Name = "Noclip",
     Default = false,
@@ -354,6 +455,26 @@ Gen:AddToggle({
         end
     end
 })
+
+local fling_toggle = Gen:AddToggle({
+    Name = "Fling (players must have collision)",
+    Default = false,
+    Callback = function(val)
+        if val then
+            Fling(LocalPlayer)
+        else
+            unfling(LocalPlayer)
+        end
+    end
+})
+
+-- When died
+
+LocalPlayer.Character:WaitForChild("Humanoid").Died:Connect(function()
+    if _G.fling then
+        fling_toggle:Set(false)
+    end
+end)
 
 Gen:AddToggle({
     Name = "Infinite health",
@@ -449,7 +570,12 @@ Fun:AddToggle({
                 return
             else
                 LocalPlayer.Character:WaitForChild("Humanoid"):UnequipTools()
-                LocalPlayer.Backpack:WaitForChild("Jerk Off"):Destroy()
+                
+                for items, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+                    if item.Name == "Jerk Off" then
+                        item:Destroy()
+                    end
+                end
             end
         end
     end
@@ -466,11 +592,107 @@ Fun:AddToggle({
                 return
             else
                 LocalPlayer.Character:WaitForChild("Humanoid"):UnequipTools()
-                LocalPlayer.Backpack:WaitForChild("Jerk Off R15"):Destroy()
+
+                for items, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+                    if item.Name == "Jerk Off [R15]" then
+                        item:Destroy()
+                    end
+                end
             end
         end
     end
 })
+
+Fun:AddLabel("Buggy but cool")
+
+Fun:AddButton({
+    Name = "Backflip/frontflip script",
+    Callback = function()
+        wait(5)
+    --[[ Info ]]--
+
+    local ver = "2.00"
+    local scriptname = "feFlip"
+
+
+    --[[ Keybinds ]]--
+
+    local FrontflipKey = Enum.KeyCode.Z
+    local BackflipKey = Enum.KeyCode.X
+    local AirjumpKey = Enum.KeyCode.C
+
+
+    --[[ Dependencies ]]--
+
+    local ca = game:GetService("ContextActionService")
+    local zeezy = game:GetService("Players").LocalPlayer
+    local h = 0.0174533
+    local antigrav
+
+
+    --[[ Functions ]]--
+
+    function zeezyFrontflip(act,inp,obj)
+    	if inp == Enum.UserInputState.Begin then
+    		zeezy.Character.Humanoid:ChangeState("Jumping")
+    		wait()
+    		zeezy.Character.Humanoid.Sit = true
+    		for i = 1,360 do 
+    			delay(i/720,function()
+    			zeezy.Character.Humanoid.Sit = true
+    				zeezy.Character.HumanoidRootPart.CFrame = zeezy.Character.HumanoidRootPart.CFrame * CFrame.Angles(-h,0,0)
+    			end)
+    		end
+    		wait(0.55)
+    		zeezy.Character.Humanoid.Sit = false
+    	end
+    end
+
+    function zeezyBackflip(act,inp,obj)
+    	if inp == Enum.UserInputState.Begin then
+    		zeezy.Character.Humanoid:ChangeState("Jumping")
+    		wait()
+    		zeezy.Character.Humanoid.Sit = true
+    		for i = 1,360 do
+    			delay(i/720,function()
+    			zeezy.Character.Humanoid.Sit = true
+    				zeezy.Character.HumanoidRootPart.CFrame = zeezy.Character.HumanoidRootPart.CFrame * CFrame.Angles(h,0,0)
+    			end)
+    		end
+    		wait(0.55)
+    		zeezy.Character.Humanoid.Sit = false
+    	end
+    end
+
+    function zeezyAirjump(act,inp,obj)
+    	if inp == Enum.UserInputState.Begin then
+    		zeezy.Character:FindFirstChildOfClass'Humanoid':ChangeState("Seated")
+    		wait()
+    		zeezy.Character:FindFirstChildOfClass'Humanoid':ChangeState("Jumping")	
+    	end
+    end
+
+
+    --[[ Binds ]]--
+
+    ca:BindAction("zeezyFrontflip",zeezyFrontflip,false,FrontflipKey)
+    ca:BindAction("zeezyBackflip",zeezyBackflip,false,BackflipKey)
+    ca:BindAction("zeezyAirjump",zeezyAirjump,false,AirjumpKey)
+
+    --[[ Load Message ]]--
+
+    print(scriptname .. " " .. ver .. " loaded successfully")
+    print("made by Zeezy#7203")
+
+    local notifSound = Instance.new("Sound",workspace)
+    notifSound.PlaybackSpeed = 1.5
+    notifSound.Volume = 0.15
+    notifSound.SoundId = "rbxassetid://170765130"
+    notifSound.PlayOnRemove = true
+    notifSound:Destroy()
+    game.StarterGui:SetCore("SendNotification", {Title = "feFlip", Text = "feFlip loaded successfully!", Icon = "rbxassetid://505845268", Duration = 5, Button1 = "Okay"})
+    end
+    })
 
 Fun:AddLabel("Chat bypassers")
 
