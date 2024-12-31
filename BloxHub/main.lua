@@ -1,7 +1,14 @@
 -- Variables
 local Players = game:GetService("Players"):GetPlayers()
 local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local CGUI = game:GetService("CoreGui")
+
+local teleport = game:GetService("TeleportService")
+
 local LocalPlayer = game.Players.LocalPlayer
+
+local Lighting = game:GetService("Lighting")
 
 local HttpService = game:GetService("HttpService")
 local LocalizationService = game:GetService("LocalizationService")
@@ -36,12 +43,27 @@ _G.country = Countries[LocalizationService:GetCountryRegionForPlayerAsync(LocalP
 _G.HeadSize = 20
 _G.Disabled = false
 _G.fling = false
+_G.Character = nil
+_G.noclip = false
+
+local IsOnMobile
+
+if UIS.KeyboardEnabled and UIS.MouseEnabled and not UIS.GamepadEnabled then
+    IsOnMobile = false
+elseif UIS.TouchEnabled and not UIS.KeyboardEnabled and not UIS.MouseEnabled then
+    IsOnMobile = true
+end
+
+if UIS.TouchEnabled and UIS.KeyboardEnabled and UIS.MouseEnabled then
+    IsOnMobile = false
+end
 
 local FLYING = false
 local QEfly = true
-local iyflyspeed = 1
-local vehicleflyspeed = 1
+local fly_speed = 1
+local v_fly_speed = 1
 local flinging = false
+local invisRunning = false
 
 local Noclipping = nil
 local flingDied = nil
@@ -62,43 +84,38 @@ function randomString()
 	return table.concat(array)
 end
 
-local function TP(player)
-    player = player:lower()
-
-    for i, v in pairs(game.Workspace:GetChildren()) do
-        if v:IsA("Model") then
-            if v.Name:lower() == player then
-                local localroot = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
-                local char = v
-                local root = char:WaitForChild("HumanoidRootPart")
-                localroot.CFrame = root.CFrame + Vector3.new(0, 0, -5)
-                OrionLib:MakeNotification({
-                    Name = "Success",
-                    Content = "Teleported to player ".._G.target,
-                    Image = "rbxassetid://4483345998",
-                    Time = 5
-                })
-
-                checked_plrs = {}
-                return
-            else
-                table.insert(checked_plrs, v.Name)
-
-                for names, v in ipairs(checked_plrs) do
-                    if names == i then
-                        OrionLib:MakeNotification({
-                            Name = "Error",
-                            Content = "Player doesn't have a character or player wasn't found.",
-                            Image = "rbxassetid://4483345998",
-                            Time = 5
-                        })
-
-                        checked_plrs = {}
-                    end
-                end
+local function GetPlayer(name, type)
+    for _,v in pairs(game:GetService("Players"):GetPlayers()) do
+        if type == "player" then
+            if string.find(v.Name:lower(), name) then
+                return v
+            end
+        elseif type == "name" then
+            if string.find(v.Name:lower(), name) then
+                return v.Name
             end
         end
     end
+end
+
+local function TP(player)
+    if player == "" then return end
+
+    player = player:lower()
+
+    local v = GetPlayer(player, "player")
+
+    local localroot = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+    local char = v.Character
+    local root = char:WaitForChild("HumanoidRootPart")
+    localroot.CFrame = root.CFrame + Vector3.new(0, 0, -5)
+
+    OrionLib:MakeNotification({
+        Name = "Success",
+        Content = "Teleported to player ".._G.target,
+        Image = "rbxassetid://4483345998",
+        Time = 5
+    })
 end
 
 function getRoot(char)
@@ -188,17 +205,17 @@ function sFLY(vfly)
 	end
 	flyKeyDown = IYMouse.KeyDown:Connect(function(KEY)
 		if KEY:lower() == 'w' then
-			CONTROL.F = (vfly and vehicleflyspeed or iyflyspeed)
+			CONTROL.F = (vfly and v_fly_speed or fly_speed)
 		elseif KEY:lower() == 's' then
-			CONTROL.B = - (vfly and vehicleflyspeed or iyflyspeed)
+			CONTROL.B = - (vfly and v_fly_speed or fly_speed)
 		elseif KEY:lower() == 'a' then
-			CONTROL.L = - (vfly and vehicleflyspeed or iyflyspeed)
+			CONTROL.L = - (vfly and v_fly_speed or fly_speed)
 		elseif KEY:lower() == 'd' then 
-			CONTROL.R = (vfly and vehicleflyspeed or iyflyspeed)
+			CONTROL.R = (vfly and v_fly_speed or fly_speed)
 		elseif QEfly and KEY:lower() == 'e' then
-			CONTROL.Q = (vfly and vehicleflyspeed or iyflyspeed)*2
+			CONTROL.Q = (vfly and v_fly_speed or fly_speed)*2
 		elseif QEfly and KEY:lower() == 'q' then
-			CONTROL.E = -(vfly and vehicleflyspeed or iyflyspeed)*2
+			CONTROL.E = -(vfly and v_fly_speed or fly_speed)*2
 		end
 		pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Track end)
 	end)
@@ -286,6 +303,387 @@ function Fling(speaker)
 		bambam.AngularVelocity = Vector3.new(0,0,0)
 		wait(.1)
 	until flinging == false
+end
+
+local function fixcam(speaker)
+    workspace.CurrentCamera:remove()
+	wait(.1)
+	repeat wait() until speaker.Character ~= nil
+	workspace.CurrentCamera.CameraSubject = speaker.Character:FindFirstChildWhichIsA('Humanoid')
+	workspace.CurrentCamera.CameraType = "Custom"
+	speaker.CameraMinZoomDistance = 0.5
+	speaker.CameraMaxZoomDistance = 400
+	speaker.CameraMode = "Classic"
+	speaker.Character.Head.Anchored = false
+end
+
+function Invis(speaker)
+    if not invisRunning then return end
+
+	local Player = speaker
+	repeat wait(.1) until Player.Character
+	_G.Character = Player.Character
+    Character = _G.Character
+	Character.Archivable = true
+	local IsInvis = false
+	local IsRunning = true
+	local InvisibleCharacter = Character:Clone()
+	InvisibleCharacter.Parent = Lighting
+	local Void = workspace.FallenPartsDestroyHeight
+	InvisibleCharacter.Name = "invis"
+	local CF
+
+	local invisFix = RS.Stepped:Connect(function()
+		pcall(function()
+			local IsInteger
+			if tostring(Void):find'-' then
+				IsInteger = true
+			else
+				IsInteger = false
+			end
+			local Pos = Player.Character.HumanoidRootPart.Position
+			local Pos_String = tostring(Pos)
+			local Pos_Seperate = Pos_String:split(', ')
+			local X = tonumber(Pos_Seperate[1])
+			local Y = tonumber(Pos_Seperate[2])
+			local Z = tonumber(Pos_Seperate[3])
+			if IsInteger == true then
+				if Y <= Void then
+					Respawn()
+				end
+			elseif IsInteger == false then
+				if Y >= Void then
+					Respawn()
+				end
+			end
+		end)
+	end)
+
+	for i,v in pairs(InvisibleCharacter:GetDescendants())do
+		if v:IsA("BasePart") then
+			if v.Name == "HumanoidRootPart" then
+				v.Transparency = 1
+			else
+				v.Transparency = .5
+			end
+		end
+	end
+
+	--function Respawn()
+	--	IsRunning = false
+	--	if IsInvis == true then
+	--		pcall(function()
+	--			Player.Character = Character
+	--			wait()
+	--			Character.Parent = workspace
+	--			Character:FindFirstChildWhichIsA'Humanoid':Destroy()
+	--			IsInvis = false
+	--			InvisibleCharacter.Parent = nil
+	--			invisRunning = false
+	--		end)
+	--	elseif IsInvis == false then
+	--		pcall(function()
+	--			Player.Character = Character
+	--			wait()
+	--			Character.Parent = workspace
+	--			Character:FindFirstChildWhichIsA'Humanoid':Destroy()
+	--			TurnVisible(speaker)
+	--		end)
+	--	end
+	--end
+
+	local invisDied
+	invisDied = InvisibleCharacter:FindFirstChildOfClass('Humanoid').Died:Connect(function()
+		-- Respawn()
+		invisDied:Disconnect()
+	end)
+
+	if IsInvis == true then return end
+	IsInvis = true
+	CF = workspace.CurrentCamera.CFrame
+	local CF_1 = Player.Character.HumanoidRootPart.CFrame
+	Character:MoveTo(Vector3.new(0,math.pi*1000000,0))
+	workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+	wait(.2)
+	workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+	InvisibleCharacter = InvisibleCharacter
+	Character.Parent = Lighting
+	InvisibleCharacter.Parent = workspace
+	InvisibleCharacter.HumanoidRootPart.CFrame = CF_1
+	Player.Character = InvisibleCharacter
+	fixcam(speaker)
+	Player.Character.Animate.Disabled = true
+	Player.Character.Animate.Disabled = false
+
+	function TurnVisible(speaker)
+        print(Player.Name)
+        print(Character.Name)
+        print(IsInvis)
+
+		if IsInvis == false then return end
+		invisFix:Disconnect()
+		invisDied:Disconnect()
+		local CF = game.Workspace.CurrentCamera.CFrame
+		Character = _G.Character
+		local CF_1 = Player.Character.HumanoidRootPart.CFrame
+		Character.HumanoidRootPart.CFrame = CF_1
+		InvisibleCharacter:Destroy()
+		Player.Character = Character
+		Character.Parent = game.Workspace
+		IsInvis = false
+		Player.Character.Animate.Disabled = true
+		Player.Character.Animate.Disabled = false
+		invisDied = Character:FindFirstChildOfClass('Humanoid').Died:Connect(function()
+			-- Respawn()
+			invisDied:Disconnect()
+		end)
+		invisRunning = false
+	end
+	
+    
+    OrionLib:MakeNotification({
+        Name = "Success",
+        Content = "You are now invisible to other players.",
+        Image = "rbxassetid://4483345998",
+        Time = 5
+    })
+end
+
+local velocityHandlerName = randomString()
+local gyroHandlerName = randomString()
+local mfly1
+local mfly2
+
+function unmobilefly(speaker)
+    pcall(function()
+		FLYING = false
+		local root = getRoot(speaker.Character)
+		root:FindFirstChild(velocityHandlerName):Destroy()
+		root:FindFirstChild(gyroHandlerName):Destroy()
+		speaker.Character:FindFirstChildWhichIsA("Humanoid").PlatformStand = false
+		mfly1:Disconnect()
+		mfly2:Disconnect()
+	end)
+end
+
+function mobile_fly(speaker, vfly)
+	local root = getRoot(speaker.Character)
+	local camera = workspace.CurrentCamera
+	local v3none = Vector3.new()
+	local v3zero = Vector3.new(0, 0, 0)
+	local v3inf = Vector3.new(9e9, 9e9, 9e9)
+
+	local controlModule = require(speaker.PlayerScripts:WaitForChild("PlayerModule"):WaitForChild("ControlModule"))
+	local bv = Instance.new("BodyVelocity")
+	bv.Name = velocityHandlerName
+	bv.Parent = root
+	bv.MaxForce = v3zero
+	bv.Velocity = v3zero
+
+	local bg = Instance.new("BodyGyro")
+	bg.Name = gyroHandlerName
+	bg.Parent = root
+	bg.MaxTorque = v3inf
+	bg.P = 1000
+	bg.D = 50
+
+	mfly1 = speaker.CharacterAdded:Connect(function()
+		local bv = Instance.new("BodyVelocity")
+		bv.Name = velocityHandlerName
+		bv.Parent = root
+		bv.MaxForce = v3zero
+		bv.Velocity = v3zero
+
+		local bg = Instance.new("BodyGyro")
+		bg.Name = gyroHandlerName
+		bg.Parent = root
+		bg.MaxTorque = v3inf
+		bg.P = 1000
+		bg.D = 50
+	end)
+
+	mfly2 = RS.RenderStepped:Connect(function()
+		root = getRoot(speaker.Character)
+		camera = workspace.CurrentCamera
+		if speaker.Character:FindFirstChildWhichIsA("Humanoid") and root and root:FindFirstChild(velocityHandlerName) and root:FindFirstChild(gyroHandlerName) then
+			local humanoid = speaker.Character:FindFirstChildWhichIsA("Humanoid")
+			local VelocityHandler = root:FindFirstChild(velocityHandlerName)
+			local GyroHandler = root:FindFirstChild(gyroHandlerName)
+
+			VelocityHandler.MaxForce = v3inf
+			GyroHandler.MaxTorque = v3inf
+			if not vfly then humanoid.PlatformStand = true end
+			GyroHandler.CFrame = camera.CoordinateFrame
+			VelocityHandler.Velocity = v3none
+
+			local direction = controlModule:GetMoveVector()
+			if direction.X > 0 then
+				VelocityHandler.Velocity = VelocityHandler.Velocity + camera.CFrame.RightVector * (direction.X * ((vfly and v_fly_speed or fly_speed) * 50))
+			end
+			if direction.X < 0 then
+				VelocityHandler.Velocity = VelocityHandler.Velocity + camera.CFrame.RightVector * (direction.X * ((vfly and v_fly_speed or fly_speed) * 50))
+			end
+			if direction.Z > 0 then
+				VelocityHandler.Velocity = VelocityHandler.Velocity - camera.CFrame.LookVector * (direction.Z * ((vfly and v_fly_speed or fly_speed) * 50))
+			end
+			if direction.Z < 0 then
+				VelocityHandler.Velocity = VelocityHandler.Velocity - camera.CFrame.LookVector * (direction.Z * ((vfly and v_fly_speed or fly_speed) * 50))
+			end
+		end
+	end)
+end
+
+function Full_bright()
+    Lighting.Brightness = 2
+	Lighting.ClockTime = 14
+	Lighting.FogEnd = 100000
+	Lighting.GlobalShadows = false
+	Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+end
+
+function freeze()
+    for i, v in pairs(LocalPlayer.Character:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.Anchored = true
+        end
+    end
+end
+
+function unfreeze()
+    for i, v in pairs(LocalPlayer.Character:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.Anchored = false
+        end
+    end
+end
+
+local function Server_info()
+    local font = Font.fromEnum(Enum.Font.Gotham)
+    local weight = Enum.FontWeight.Bold
+
+    local GUI = Instance.new("ScreenGui")
+    GUI.Name = "Server info"
+    GUI.IgnoreGuiInset = true
+    GUI.ResetOnSpawn = false
+    GUI.Parent = CGUI
+
+    local main = Instance.new("Frame")
+    main.Name = "main"
+    main.Position = UDim2.new(0.415, 0, 0.268, 0)
+    main.Size = UDim2.new(0.325, 0, 0.463, 0)
+    main.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    main.Parent = GUI
+
+    local Head = Instance.new("TextLabel")
+    Head.Name = "Head"
+    Head.Size = UDim2.new(1, 0, 0.057, 0)
+    Head.BackgroundTransparency = 1
+    Head.FontFace = font
+    Head.FontFace.Weight = weight
+    Head.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Head.TextScaled = true
+    Head.Text = "Server info"
+    Head.Parent = main
+
+    local JobID = Instance.new("TextLabel")
+    JobID.Name = "JobID"
+    JobID.Position = UDim2.new(0.028, 0, 0.148, 0)
+    JobID.Size = UDim2.new(0.769, 0, 0.05, 0)
+    JobID.BackgroundTransparency = 1
+    JobID.FontFace = font
+    JobID.FontFace.Weight = weight
+    JobID.TextXAlignment = Enum.TextXAlignment.Left
+    JobID.TextColor3 = Color3.new(255, 255, 255)
+    JobID.TextScaled = true
+    JobID.Text = "Job ID: "..game.JobId
+    JobID.Parent = main
+
+    local Region = Instance.new("TextLabel")
+    Region.Name = "Region"
+    Region.Position = UDim2.new(0.028, 0, 0.211, 0)
+    Region.Size = UDim2.new(0.769, 0, 0.05, 0)
+    Region.BackgroundTransparency = 1
+    Region.FontFace = font
+    Region.FontFace.Weight = weight
+    Region.TextXAlignment = Enum.TextXAlignment.Left
+    Region.TextColor3 = Color3.new(255, 255, 255)
+    Region.TextScaled = true
+
+    local e = HttpService:JSONDecode(game:HttpGet("https://ipconfig.io/json"))
+
+    Region.Text = "Server region (local): "..e["region_name"]..", "..e["country"]
+    Region.Parent = main
+
+    local Age = Instance.new("TextLabel")
+    Age.Name = "Age"
+    Age.Position = UDim2.new(0.028, 0, 0.277, 0)
+    Age.Size = UDim2.new(0.769, 0, 0.05, 0)
+    Age.BackgroundTransparency = 1
+    Age.FontFace = font
+    Age.FontFace.Weight = weight
+    Age.TextXAlignment = Enum.TextXAlignment.Left
+    Age.TextColor3 = Color3.new(255, 255, 255)
+    Age.TextScaled = true
+    Age.Text = "Age (local): "..
+        string.format("%02d", tostring(math.floor((workspace.DistributedGameTime / 86400)))).." Days "..
+		string.format("%02d", tostring(math.floor((workspace.DistributedGameTime / 3600)))).." Hours "..
+		string.format("%02d", tostring(math.floor((workspace.DistributedGameTime / 60)))).." Minutes "..
+		string.format("%02d", tostring(math.floor(workspace.DistributedGameTime))).." Seconds "
+
+    Age.Parent = main
+
+    local ee = Instance.new("TextLabel")
+    ee.Name = "E"
+    ee.Position = UDim2.new(0.012, 0, 0.569, 0)
+    ee.Size = UDim2.new(0.971, 0, 0.098, 0)
+    ee.Rotation = 30
+    ee.BackgroundTransparency = 1
+    ee.FontFace = font
+    ee.FontFace.Weight = weight
+    ee.TextColor3 = Color3.new(255, 255, 255)
+    ee.TextScaled = true
+    ee.Text = "Coming soon"
+    ee.Parent = main
+
+    local Rejoin = Instance.new("TextButton")
+    Rejoin.Name = "Rejoin"
+    Rejoin.Position = UDim2.new(0, 0, 0.948, 0)
+    Rejoin.Size = UDim2.new(0.202, 0, 0.052, 0)
+    Rejoin.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Rejoin.FontFace = font
+    Rejoin.FontFace.Weight = weight
+    Rejoin.Text = "Rejoin"
+    Rejoin.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Rejoin.TextScaled = true
+    Rejoin.Parent = main
+
+    local Close = Instance.new("TextButton")
+    Close.Name = "Close"
+    Close.Position = UDim2.new(0.886, 0, 0, 0)
+    Close.Size = UDim2.new(0.114, 0, 0.084, 0)
+    Close.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    Close.FontFace = font
+    Close.FontFace.Weight = weight
+    Close.Text = "X"
+    Close.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Close.TextScaled = true
+    Close.Parent = main
+
+    Rejoin.MouseButton1Click:Connect(function()
+        teleport:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end)
+
+    Close.MouseButton1Click:Connect(function()
+        GUI:Destroy()
+    end)
+
+    while task.wait(1) do
+        Age.Text = "Age (local): "..
+        string.format("%02d", tostring(math.floor((workspace.DistributedGameTime / 86400)))).." Days "..
+		string.format("%02d", tostring(math.floor((workspace.DistributedGameTime / 3600)))).." Hours "..
+		string.format("%02d", tostring(math.floor((workspace.DistributedGameTime / 60)))).." Minutes "..
+		string.format("%02d", tostring(math.floor(workspace.DistributedGameTime))).." Seconds "
+    end
 end
 
 -- RS
@@ -390,14 +788,23 @@ Gen:AddTextbox({
                 Time = 5
             })
         else
-            _G.target = Value
-            
-            OrionLib:MakeNotification({
-                Name = "Success",
-                Content = "Selected target: ".._G.target,
-                Image = "rbxassetid://4483345998",
-                Time = 5
-            })
+            _G.target = GetPlayer(Value:lower(), "name")
+
+            if _G.target == LocalPlayer.Name then
+                OrionLib:MakeNotification({
+                    Name = "Error",
+                    Content = "Cannot teleport to yourself!",
+                    Image = "rbxassetid://4483345998",
+                    Time = 5
+                })
+            else
+                OrionLib:MakeNotification({
+                    Name = "Success",
+                    Content = "Selected target: ".._G.target,
+                    Image = "rbxassetid://4483345998",
+                    Time = 5
+                })
+            end
         end
     end
 })
@@ -416,15 +823,43 @@ Gen:AddToggle({
     Default = false,
     Callback = function(Value)
         if Value then
-            sFLY(false)
+            if not IsOnMobile then
+                sFLY(false)
+            else
+                mobile_fly(LocalPlayer, false)
+            end
         else
-            NOFLY()
+            if not IsOnMobile then
+                NOFLY()
+            else
+                unmobilefly(LocalPlayer)
+            end
+        end
+    end
+})
+
+Gen:AddToggle({
+    Name = "Vehicle fly",
+    Default = false,
+    Callback = function(val)
+        if val then
+            if not IsOnMobile then
+                sFLY(true)
+            else
+                mobile_fly(LocalPlayer, true)
+            end
+        else
+            if not IsOnMobile then
+                NOFLY()
+            else
+                unmobilefly(LocalPlayer)
+            end
         end
     end
 })
 
 local fly_speed = Gen:AddSlider({
-    Name = "Fly speed",
+    Name = "Fly speed (applies for vehicle fly too.)",
     Min = 1,
     Max = 500,
     Default = 10,
@@ -432,8 +867,8 @@ local fly_speed = Gen:AddSlider({
     Increment = 1,
     ValueName = "speed",
     Callback = function(val)
-        iyflyspeed = val
-        vehicleflyspeed = val
+        fly_speed = val
+        v_fly_speed = val
     end
 })
 
@@ -450,8 +885,18 @@ Gen:AddToggle({
     Callback = function(Value)
         if Value then
             NoClip(LocalPlayer)
+            _G.noclip = Value
         else
+            if not _G.noclip then return end
+            _G.noclip = Value
             Cl()
+
+            OrionLib:MakeNotification({
+                Name = "Warning",
+                Content = "It may take some time to clip again.",
+                Image = "rbxassetid://4483345998",
+                Time = 5
+            })
         end
     end
 })
@@ -468,6 +913,27 @@ local fling_toggle = Gen:AddToggle({
     end
 })
 
+Gen:AddToggle({
+    Name = "Invisible",
+    Default = false,
+    Callback = function(val)
+        if val then
+            invisRunning = true
+            Invis(LocalPlayer)
+        else
+            if not invisRunning then return end
+            TurnVisible(LocalPlayer)
+        end
+    end
+})
+
+Gen:AddButton({
+    Name = "Full brightness",
+    Callback = function()
+        Full_bright()
+    end
+})
+
 -- When died
 
 LocalPlayer.Character:WaitForChild("Humanoid").Died:Connect(function()
@@ -475,18 +941,6 @@ LocalPlayer.Character:WaitForChild("Humanoid").Died:Connect(function()
         fling_toggle:Set(false)
     end
 end)
-
-Gen:AddToggle({
-    Name = "Infinite health",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            LocalPlayer.Character.Humanoid.Health = 9223372036854775807
-        else
-            LocalPlayer.Character.Humanoid.Health = 100
-        end
-    end
-})
 
 Gen:AddLabel("Change your properties")
 local speed = Gen:AddSlider({
@@ -608,7 +1062,6 @@ Fun:AddLabel("Buggy but cool")
 Fun:AddButton({
     Name = "Backflip/frontflip script",
     Callback = function()
-        wait(5)
     --[[ Info ]]--
 
     local ver = "2.00"
@@ -692,7 +1145,19 @@ Fun:AddButton({
     notifSound:Destroy()
     game.StarterGui:SetCore("SendNotification", {Title = "feFlip", Text = "feFlip loaded successfully!", Icon = "rbxassetid://505845268", Duration = 5, Button1 = "Okay"})
     end
-    })
+})
+
+Fun:AddToggle({
+    Name = "Freeze yourself",
+    Default = false,
+    Callback = function(val)
+        if val then
+            freeze()
+        else
+            unfreeze()
+        end
+    end
+})
 
 Fun:AddLabel("Chat bypassers")
 
@@ -711,9 +1176,17 @@ Fun:AddButton({
 })
 
 -- Info
+
 Info:AddLabel("--- INFO ---")
 Info:AddLabel("Executor: "..exec_name)
 Info:AddLabel("BloxHub version: test v1.5")
 Info:AddLabel("Player's country: ".._G.country)
+
+Info:AddButton({
+    Name = "Server info",
+    Callback = function()
+        Server_info()
+    end
+})
 
 OrionLib:Init()
