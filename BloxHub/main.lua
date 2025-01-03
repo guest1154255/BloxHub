@@ -45,6 +45,11 @@ _G.Disabled = false
 _G.fling = false
 _G.Character = nil
 _G.noclip = false
+_G.bang_target = ""
+_G.bang_speed = 1
+
+_G.banging = false
+_G.face_banging = false
 
 local IsOnMobile
 
@@ -69,6 +74,11 @@ local Noclipping = nil
 local flingDied = nil
 local Clip = true
 
+local bangAnim
+local bang
+local bangDied
+local bangLoop
+
 local IYMouse = LocalPlayer:GetMouse()
 
 local checked_plrs = {}
@@ -85,13 +95,18 @@ function randomString()
 end
 
 local function GetPlayer(name, type)
-    for _,v in pairs(game:GetService("Players"):GetPlayers()) do
+    if name == nil then
+        warn("name is nil")
+        return
+    end
+
+    for i, v in pairs(game:GetService("Players"):GetPlayers()) do
         if type == "player" then
-            if string.find(v.Name:lower(), name) then
+            if string.find(v.Name:lower(), name) or string.find(v.DisplayName:lower(), name) then
                 return v
             end
         elseif type == "name" then
-            if string.find(v.Name:lower(), name) then
+            if string.find(v.Name:lower(), name) or string.find(v.DisplayName:lower(), name) then
                 return v.Name
             end
         end
@@ -100,10 +115,22 @@ end
 
 local function TP(player)
     if player == "" then return end
+    if player == nil then return end
 
     player = player:lower()
 
     local v = GetPlayer(player, "player")
+
+    if v == nil then
+        OrionLib:MakeNotification({
+            Name = "Error",
+            Content = "Player might have left or doesn't have a character.",
+            Image = "rbxassetid://4483345998",
+            Time = 5
+        })
+
+        return
+    end
 
     local localroot = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
     local char = v.Character
@@ -145,7 +172,10 @@ function Cl()
         if Noclipping == nil then
             return
         else
+            local hum = LocalPlayer.Character:WaitForChild("Humanoid")
             Noclipping:Disconnect()
+
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
     
         Clip = true
@@ -349,11 +379,11 @@ function Invis(speaker)
 			local Z = tonumber(Pos_Seperate[3])
 			if IsInteger == true then
 				if Y <= Void then
-					Respawn()
+					--Respawn()
 				end
 			elseif IsInteger == false then
 				if Y >= Void then
-					Respawn()
+					--Respawn()
 				end
 			end
 		end)
@@ -554,6 +584,92 @@ function unfreeze()
         if v:IsA("BasePart") then
             v.Anchored = false
         end
+    end
+end
+
+function getTorso(x)
+    return x:FindFirstChild("Torso") or x:FindFirstChild("UpperTorso") or x:FindFirstChild("LowerTorso") or x:FindFirstChild("HumanoidRootPart")
+end
+
+function r15(plr)
+	if plr.Character:FindFirstChildOfClass('Humanoid').RigType == Enum.HumanoidRigType.R15 then
+		return true
+	end
+end
+
+function Bang(target, speaker, type)
+    if target == "" then return end
+    if target == nil then return end
+
+    local humanoid = speaker.Character:FindFirstChildWhichIsA("Humanoid")
+	bangAnim = Instance.new("Animation")
+	bangAnim.AnimationId = not r15(speaker) and "rbxassetid://148840371" or "rbxassetid://5918726674"
+	bang = humanoid:LoadAnimation(bangAnim)
+	bang:Play(0.1, 1, 1)
+	bang:AdjustSpeed(_G.bang_speed)
+	bangDied = humanoid.Died:Connect(function()
+		bang:Stop()
+		bangAnim:Destroy()
+		bangDied:Disconnect()
+		bangLoop:Disconnect()
+        _G.bang:Set(false)
+        _G.face_bang:Set(false)
+        _G.banging = false
+        _G.face_banging = false
+	end)
+
+	local player = game.Players:FindFirstChild(target)
+
+    if type == "bang" then
+        local bangOffset = CFrame.new(0, 0, 1.1)
+
+        bangLoop = RS.RenderStepped:Connect(function()
+            local success, err = pcall(function()
+                bang:AdjustSpeed(_G.bang_speed)
+        
+                local x = player.Character or player.CharacterAdded:Wait()
+    
+                local otherRoot = getTorso(x)
+                local CF = otherRoot.CFrame * bangOffset
+
+                getRoot(speaker.Character).CFrame = CF
+            end)
+    
+            if not success then
+                warn(err)
+            end
+        end)
+    elseif type == "face-bang" then
+        local bangOffset = CFrame.new(0, 0, -1.1) * CFrame.Angles(math.rad(180), 0, math.rad(180))
+
+        bangLoop = RS.Stepped:Connect(function()
+            local success, err = pcall(function()
+                bang:AdjustSpeed(_G.bang_speed)
+        
+                local x = player.Character or player.CharacterAdded:Wait()
+    
+                local otherRoot = getTorso(x)
+
+                local CF = otherRoot.CFrame * bangOffset
+
+                getRoot(speaker.Character).CFrame = CF
+            end)
+    
+            if not success then
+                warn(err)
+            end
+        end)
+    end
+end
+
+function Unbang()
+    if bangDied ~= nil then
+        bangDied:Disconnect()
+		bang:Stop()
+		bangAnim:Destroy()
+		bangLoop:Disconnect()
+    else
+        warn("bangdied isnt loaded")
     end
 end
 
@@ -789,21 +905,35 @@ Gen:AddTextbox({
             })
         else
             _G.target = GetPlayer(Value:lower(), "name")
+            print(_G.target)
 
-            if _G.target == LocalPlayer.Name then
-                OrionLib:MakeNotification({
-                    Name = "Error",
-                    Content = "Cannot teleport to yourself!",
-                    Image = "rbxassetid://4483345998",
-                    Time = 5
-                })
+            if _G.target ~= nil then
+                if _G.target == LocalPlayer.Name then
+                    OrionLib:MakeNotification({
+                        Name = "Error",
+                        Content = "Cannot teleport to yourself!",
+                        Image = "rbxassetid://4483345998",
+                        Time = 5
+                    })
+                    return
+                else
+                    OrionLib:MakeNotification({
+                        Name = "Success",
+                        Content = "Selected target: ".._G.target,
+                        Image = "rbxassetid://4483345998",
+                        Time = 5
+                    })
+                    return
+                end
             else
                 OrionLib:MakeNotification({
-                    Name = "Success",
-                    Content = "Selected target: ".._G.target,
+                    Name = "Error",
+                    Content = "Did not find player",
                     Image = "rbxassetid://4483345998",
                     Time = 5
                 })
+    
+                return
             end
         end
     end
@@ -890,13 +1020,6 @@ Gen:AddToggle({
             if not _G.noclip then return end
             _G.noclip = Value
             Cl()
-
-            OrionLib:MakeNotification({
-                Name = "Warning",
-                Content = "It may take some time to clip again.",
-                Image = "rbxassetid://4483345998",
-                Time = 5
-            })
         end
     end
 })
@@ -1048,11 +1171,103 @@ Fun:AddToggle({
                 LocalPlayer.Character:WaitForChild("Humanoid"):UnequipTools()
 
                 for items, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
-                    if item.Name == "Jerk Off [R15]" then
+                    if item.Name == "Jerk Off R15" then
                         item:Destroy()
                     end
                 end
             end
+        end
+    end
+})
+
+Fun:AddLabel("Bang")
+
+Fun:AddTextbox({
+    Name = "Player",
+    Default = "",
+    TextDisappear = true,
+    Callback = function(Value)
+        if Value == "" then
+            OrionLib:MakeNotification({
+                Name = "Error",
+                Content = "Please include a player.",
+                Image = "rbxassetid://4483345998",
+                Time = 5
+            })
+        else
+            _G.bang_target = GetPlayer(Value:lower(), "name")
+
+            if _G.bang_target ~= nil then
+                if _G.bang_target == LocalPlayer.Name then
+                    OrionLib:MakeNotification({
+                        Name = "Error",
+                        Content = "Cannot teleport to yourself!",
+                        Image = "rbxassetid://4483345998",
+                        Time = 5
+                    })
+                    return
+                else
+                    OrionLib:MakeNotification({
+                        Name = "Success",
+                        Content = "Selected target: ".._G.bang_target,
+                        Image = "rbxassetid://4483345998",
+                        Time = 5
+                    })
+                    return
+                end
+            else
+                OrionLib:MakeNotification({
+                    Name = "Error",
+                    Content = "Did not find player",
+                    Image = "rbxassetid://4483345998",
+                    Time = 5
+                })
+    
+                return
+            end
+        end
+    end
+})
+
+Fun:AddSlider({
+    Name = "Bang speed",
+    Min = 1,
+    Max = 100,
+    Default = 3,
+    Color = Color3.new(200, 0, 0),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(val)
+        _G.bang_speed = val
+    end
+})
+
+_G.bang = Fun:AddToggle({
+    Name = "Bang",
+    Default = false,
+    Callback = function(val)
+        if _G.face_banging then _G.face_banging = false Unbang() _G.face_bang:Set(false) end
+        _G.banging = val
+
+        if val then
+            Bang(_G.bang_target, LocalPlayer, "bang")
+        else
+            Unbang()
+        end
+    end
+})
+
+_G.face_bang = Fun:AddToggle({
+    Name = "Front bang",
+    Default = false,
+    Callback = function(val)
+        if _G.banging then _G.banging = false Unbang() _G.bang:Set(false) end
+        _G.face_banging = val
+
+        if val then
+            Bang(_G.bang_target, LocalPlayer, "face-bang")
+        else
+            Unbang()
         end
     end
 })
