@@ -892,7 +892,7 @@ end
 Gen:AddLabel("Teleport to a player")
 
 Gen:AddTextbox({
-    Name = "Player (usernames only)",
+    Name = "Player",
     Default = "",
     TextDisappear = true,
     Callback = function(Value)
