@@ -3,6 +3,7 @@ local Players = game:GetService("Players"):GetPlayers()
 local RS = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local CGUI = game:GetService("CoreGui")
+local AvatarEditorService = game:GetService("AvatarEditorService")
 
 local teleport = game:GetService("TeleportService")
 
@@ -92,6 +93,10 @@ function randomString()
 		array[i] = string.char(math.random(32, 126))
 	end
 	return table.concat(array)
+end
+
+function reset(speaker)
+    speaker.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
 end
 
 local function GetPlayer(name, type)
@@ -678,6 +683,17 @@ function Unbang()
     end
 end
 
+function newRig(speaker, rig)
+    local humanoid = speaker.Character:FindFirstChildWhichIsA("Humanoid")
+	if humanoid then
+		AvatarEditorService:PromptSaveAvatar(humanoid.HumanoidDescription, Enum.HumanoidRigType[rig])
+		local result = AvatarEditorService.PromptSaveAvatarCompleted:Wait()
+		if result == Enum.AvatarPromptResult.Success then
+			reset(speaker)
+		end
+	end
+end
+
 local function Server_info()
     local font = Font.fromEnum(Enum.Font.Gotham)
     local weight = Enum.FontWeight.Bold
@@ -1062,6 +1078,15 @@ Gen:AddButton({
     end
 })
 
+Gen:AddLabel("When needed")
+
+Gen:AddButton({
+    Name = "Reset your character",
+    Callback = function()
+        reset(LocalPlayer)
+    end
+})
+
 -- When died
 
 LocalPlayer.Character:WaitForChild("Humanoid").Died:Connect(function()
@@ -1277,7 +1302,7 @@ _G.face_bang = Fun:AddToggle({
     end
 })
 
-Fun:AddLabel("Buggy but cool")
+Fun:AddLabel("May be buggy but cool")
 
 Fun:AddButton({
     Name = "Backflip/frontflip script",
@@ -1379,6 +1404,22 @@ Fun:AddToggle({
     end
 })
 
+Fun:AddLabel("Change your rig type (if game doesn't force a rig type)")
+
+Fun:AddButton({
+    Name = "Become R15",
+    Callback = function()
+        newRig(LocalPlayer, "R15")
+    end
+})
+
+Fun:AddButton({
+    Name = "Become R6",
+    Callback = function()
+        newRig(LocalPlayer, "R6")
+    end
+})
+
 Fun:AddLabel("Chat bypassers")
 
 Fun:AddButton({
@@ -1399,7 +1440,7 @@ Fun:AddButton({
 
 Info:AddLabel("--- INFO ---")
 Info:AddLabel("Executor: "..exec_name)
-Info:AddLabel("BloxHub version: v2.2")
+Info:AddLabel("BloxHub version: v2.3")
 Info:AddLabel("Player's country: ".._G.country)
 
 Info:AddButton({
