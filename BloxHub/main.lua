@@ -616,9 +616,14 @@ function Bang(target, speaker, type)
         _G.face_bang:Set(false)
         _G.banging = false
         _G.face_banging = false
+        _G.noclipTog:Set(false)
+        Cl()
 	end)
 
 	local player = game.Players:FindFirstChild(target)
+
+    _G.noclipTog:Set(true)
+    NoClip(LocalPlayer)
 
     if type == "bang" then
         local bangOffset = CFrame.new(0, 0, 1.1)
@@ -892,7 +897,7 @@ end
 Gen:AddLabel("Teleport to a player")
 
 Gen:AddTextbox({
-    Name = "Player",
+    Name = "Player (usernames only)",
     Default = "",
     TextDisappear = true,
     Callback = function(Value)
@@ -1009,7 +1014,7 @@ Gen:AddButton({
     end
 })
 
-Gen:AddToggle({
+_G.noclipTog = Gen:AddToggle({
     Name = "Noclip",
     Default = false,
     Callback = function(Value)
@@ -1394,7 +1399,7 @@ Fun:AddButton({
 
 Info:AddLabel("--- INFO ---")
 Info:AddLabel("Executor: "..exec_name)
-Info:AddLabel("BloxHub version: test v1.5")
+Info:AddLabel("BloxHub version: v2.2")
 Info:AddLabel("Player's country: ".._G.country)
 
 Info:AddButton({
