@@ -52,7 +52,7 @@ def send(hwid, username, display, id, gameid, jobid, exec):
 }
 
     payload = {
-        "username": "BloxHub script logger",
+        "username": "Guesty's slave",
         "embeds": [data],
     }
 
