@@ -1,2 +1,2 @@
-<h1>BloxHub</h1>
-<p>A ROBLOX exploit hub.</p>
+<h1>Welcome to BloxHub!</h1>
+<p1>made by guest11542_55</p1>
